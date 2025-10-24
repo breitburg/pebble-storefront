@@ -33,7 +33,14 @@
       "DATA_COMPLETE"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "icon.png",
+          "menuIcon": true
+        }
+      ]
     }
   }
 }

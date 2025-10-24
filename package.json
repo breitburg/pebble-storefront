@@ -1,0 +1,39 @@
+{
+  "name": "storefront",
+  "author": "Ilia Breitburg",
+  "version": "1.0.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Storefront",
+    "uuid": "26a5d348-8920-4ae8-92a7-794a37b1bd57",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "APP_NAME",
+      "APP_AUTHOR",
+      "APP_DESCRIPTION",
+      "APP_HEARTS",
+      "APP_DAYS_AGO",
+      "APP_INDEX",
+      "DATA_COMPLETE"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

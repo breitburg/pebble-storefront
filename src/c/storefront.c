@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include "progress_layer.h"
 
 // Data structure for app store items
 typedef struct {
@@ -11,7 +12,7 @@ typedef struct {
 
 // Global variables
 static Window *s_loading_window;
-static TextLayer *s_loading_text_layer;
+static ProgressLayer *s_progress_layer;
 
 static Window *s_main_window;
 static StatusBarLayer *s_status_bar;
@@ -73,10 +74,10 @@ static void update_display(void) {
   text_layer_set_text(s_pagination_layer, pagination_text);
 }
 
-// Update loading status text
-static void update_loading_status(const char *status) {
-  if (s_loading_text_layer) {
-    text_layer_set_text(s_loading_text_layer, status);
+// Update loading progress
+static void update_loading_progress(int percentage) {
+  if (s_progress_layer) {
+    progress_layer_set_progress(s_progress_layer, percentage);
   }
 }
 
@@ -175,19 +176,35 @@ static void loading_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
-  // Create centered text layer
-  s_loading_text_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 30, bounds.size.w, 60));
-  text_layer_set_background_color(s_loading_text_layer, GColorClear);
-  text_layer_set_text_color(s_loading_text_layer, PBL_IF_COLOR_ELSE(GColorBlack, GColorBlack));
-  text_layer_set_font(s_loading_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_text_alignment(s_loading_text_layer, GTextAlignmentCenter);
-  text_layer_set_text(s_loading_text_layer, "0%");
-  layer_add_child(window_layer, text_layer_get_layer(s_loading_text_layer));
+  // Create centered progress bar
+  const int16_t progress_width = 100;
+  const int16_t progress_height = 6;
+  s_progress_layer = progress_layer_create(
+    GRect((bounds.size.w - progress_width) / 2,
+          bounds.size.h / 2 - progress_height / 2,
+          progress_width,
+          progress_height)
+  );
+  progress_layer_set_progress(s_progress_layer, 0);
+  progress_layer_set_corner_radius(s_progress_layer, 2);
+
+  // Set colors appropriately for color vs B&W displays
+  // For B&W: grey background, black foreground
+  // For color: light grey background, black foreground
+#ifdef PBL_COLOR
+  progress_layer_set_foreground_color(s_progress_layer, GColorBlack);
+  progress_layer_set_background_color(s_progress_layer, GColorLightGray);
+#else
+  progress_layer_set_foreground_color(s_progress_layer, GColorBlack);
+  progress_layer_set_background_color(s_progress_layer, GColorLightGray);
+#endif
+
+  layer_add_child(window_layer, s_progress_layer);
 }
 
 static void loading_window_unload(Window *window) {
-  text_layer_destroy(s_loading_text_layer);
-  s_loading_text_layer = NULL;
+  progress_layer_destroy(s_progress_layer);
+  s_progress_layer = NULL;
 }
 
 // Main card window lifecycle
@@ -201,10 +218,10 @@ static void main_window_load(Window *window) {
   layer_add_child(window_layer, status_bar_layer_get_layer(s_status_bar));
 
   const int16_t margin = 8;
-  const int16_t status_bar_height = 16;
+  const int16_t status_bar_height = 12;
 
   // Pagination layer (top right, in status bar area)
-  s_pagination_layer = text_layer_create(GRect(bounds.size.w - 50, 0, 50, status_bar_height));
+  s_pagination_layer = text_layer_create(GRect(bounds.size.w - 50 - 3, 0, 50, status_bar_height));
   text_layer_set_background_color(s_pagination_layer, GColorClear);
   text_layer_set_text_color(s_pagination_layer, PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack));
   text_layer_set_font(s_pagination_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -276,8 +293,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       // Remove loading window
       window_stack_remove(s_loading_window, false);
     } else {
-      // Error occurred
-      update_loading_status("Fetching failed!\nRestart the app to retry.");
+      // Error occurred - progress bar will remain at current state
+      // Could add error indication via vibes_long_pulse() if desired
     }
     return;
   }
@@ -307,9 +324,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
       // Update loading percentage
       int percentage = (s_apps_received * 100) / get_num_apps();
-      static char status[8];
-      snprintf(status, sizeof(status), "%d%%", percentage);
-      update_loading_status(status);
+      update_loading_progress(percentage);
     }
   }
 }

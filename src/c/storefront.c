@@ -7,7 +7,7 @@ typedef struct {
   char author[64];
   char description[128];
   int hearts;
-  char days_ago[32];
+  int days_ago;
 } AppStoreItem;
 
 // Global variables
@@ -51,6 +51,51 @@ static AppStoreItem* get_app_at_index(int index) {
   return &s_apps[index];
 }
 
+// Format days ago integer into display string
+static void format_days_ago(int days, char *buffer, size_t buffer_size) {
+  if (days < 0) {
+    snprintf(buffer, buffer_size, "Unknown");
+  } else if (days == 0) {
+    snprintf(buffer, buffer_size, "Today");
+  } else if (days == 1) {
+    snprintf(buffer, buffer_size, "Yesterday");
+  } else {
+    snprintf(buffer, buffer_size, "%d days ago", days);
+  }
+}
+
+// Calculate expiration time for Sunday 23:59:59 of current week
+static time_t get_sunday_expiration(void) {
+  time_t now = time(NULL);
+  struct tm *time_info = localtime(&now);
+
+  // Calculate days until Sunday (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  // If today is Sunday (0), we want next Sunday (7 days)
+  int days_until_sunday = (7 - time_info->tm_wday) % 7;
+  if (days_until_sunday == 0) {
+    days_until_sunday = 7; // If today is Sunday, expire next Sunday
+  }
+
+  // Set time to 23:59:59
+  time_info->tm_hour = 23;
+  time_info->tm_min = 59;
+  time_info->tm_sec = 59;
+  time_info->tm_mday += days_until_sunday;
+
+  return mktime(time_info);
+}
+
+// Count how many apps were released this week (last 7 days)
+static int count_new_apps_this_week(void) {
+  int count = 0;
+  for (int i = 0; i < get_num_apps(); i++) {
+    if (s_apps[i].days_ago >= 0 && s_apps[i].days_ago <= 6) {
+      count++;
+    }
+  }
+  return count;
+}
+
 // Update the display with current app data
 static void update_display(void) {
   AppStoreItem *app = get_app_at_index(s_current_index);
@@ -65,7 +110,9 @@ static void update_display(void) {
 
   // Format hearts count and release date
   static char hearts_text[64];
-  snprintf(hearts_text, sizeof(hearts_text), "❤ %d  •  %s", app->hearts, app->days_ago);
+  static char days_ago_text[32];
+  format_days_ago(app->days_ago, days_ago_text, sizeof(days_ago_text));
+  snprintf(hearts_text, sizeof(hearts_text), "❤ %d  •  %s", app->hearts, days_ago_text);
   text_layer_set_text(s_hearts_layer, hearts_text);
 
   // Format pagination
@@ -218,7 +265,7 @@ static void main_window_load(Window *window) {
   layer_add_child(window_layer, status_bar_layer_get_layer(s_status_bar));
 
   const int16_t margin = 8;
-  const int16_t status_bar_height = 12;
+  const int16_t status_bar_height = 16;
 
   // Pagination layer (top right, in status bar area)
   s_pagination_layer = text_layer_create(GRect(bounds.size.w - 50 - 3, 0, 50, status_bar_height));
@@ -316,7 +363,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
       strncpy(s_apps[index].author, author_tuple->value->cstring, sizeof(s_apps[index].author) - 1);
       strncpy(s_apps[index].description, description_tuple->value->cstring, sizeof(s_apps[index].description) - 1);
       s_apps[index].hearts = hearts_tuple->value->int32;
-      strncpy(s_apps[index].days_ago, days_ago_tuple->value->cstring, sizeof(s_apps[index].days_ago) - 1);
+      s_apps[index].days_ago = days_ago_tuple->value->int32;
 
       s_apps_received++;
 
@@ -341,7 +388,39 @@ static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
   APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success");
 }
 
+// AppGlance callback to update the app glance
+static void app_glance_update_callback(AppGlanceReloadSession *session, size_t limit, void *context) {
+  if (limit < 1) return;
+
+  int new_apps_count = count_new_apps_this_week();
+
+  // Format the message
+  static char message[64];
+  if (new_apps_count == 1) {
+    snprintf(message, sizeof(message), "1 new app this week");
+  } else {
+    snprintf(message, sizeof(message), "%d new apps this week", new_apps_count);
+  }
+
+  // Create the AppGlance slice
+  const AppGlanceSlice slice = (AppGlanceSlice) {
+    .layout = {
+      .icon = APP_GLANCE_SLICE_DEFAULT_ICON,
+      .subtitle_template_string = message
+    },
+    .expiration_time = get_sunday_expiration()
+  };
+
+  const AppGlanceResult result = app_glance_add_slice(session, slice);
+  if (result != APP_GLANCE_RESULT_SUCCESS) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "AppGlance Error: %d", result);
+  }
+}
+
 static void init(void) {
+  // Clear existing AppGlance slices
+  app_glance_reload(NULL, NULL);
+
   // Initialize AppMessage
   app_message_register_inbox_received(inbox_received_callback);
   app_message_register_inbox_dropped(inbox_dropped_callback);
@@ -365,6 +444,11 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  // Update AppGlance with new apps count only if data was successfully loaded
+  if (s_data_loaded) {
+    app_glance_reload(app_glance_update_callback, NULL);
+  }
+
   if (s_main_window) {
     window_destroy(s_main_window);
   }

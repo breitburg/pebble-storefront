@@ -17,8 +17,8 @@ function truncateDescription(text, maxWords) {
 }
 
 // Calculate days since release
-function getDaysAgoText(dateString) {
-  if (!dateString) return 'Unknown';
+function getDaysAgo(dateString) {
+  if (!dateString) return -1;
 
   var releaseDate = new Date(dateString);
   var today = new Date();
@@ -30,13 +30,7 @@ function getDaysAgoText(dateString) {
   var diffTime = today - releaseDate;
   var diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) {
-    return 'Today';
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else {
-    return diffDays + ' days ago';
-  }
+  return diffDays;
 }
 
 // Fetch apps from Rebble API
@@ -70,7 +64,7 @@ function fetchApps() {
     json.data.forEach(function (app, index) {
       setTimeout(function () {
         var description = truncateDescription(app.description, 6);
-        var daysAgo = getDaysAgoText(app.created_at);
+        var daysAgo = getDaysAgo(app.created_at);
 
         var message = {
           'APP_INDEX': index,
